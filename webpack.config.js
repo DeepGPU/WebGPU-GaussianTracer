@@ -1,7 +1,5 @@
 const path = require('path');
 const TerserPlugin = require('terser-webpack-plugin');
-const JavaScriptObfuscator = require('webpack-obfuscator');
-//const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 module.exports = (env) => {
 
@@ -59,16 +57,6 @@ module.exports = (env) => {
         }) : undefined,
       ].filter(Boolean)
     },
-    plugins: [
-      isProd ? new JavaScriptObfuscator({
-        compact: true,
-        controlFlowFlattening: true,  // 더 강력한 난독화 옵션
-        controlFlowFlatteningThreshold: 0.3, // 제어 흐름 평탄화 확률
-        deadCodeInjection: false, // 사용되지 않는 코드 주입
-        deadCodeInjectionThreshold: 0.4,  // 주입 확률 40%
-        debugProtection: false, // 디버깅 방어 기능(true시 성능 저하)
-      }) : undefined
-    ].filter(Boolean)
   };
 
   console.log('Webpack configuration:', webpackConfig);

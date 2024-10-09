@@ -10,7 +10,6 @@
   "license": "MIT",
   "devDependencies": {
     "@types/dat.gui": "^0.7.13",
-    "@types/three": "^0.165.0",
     "@webgpu/types": "^0.1.30",
     "ts-loader": "^9.2.7",
     "typescript": "^4.6.2",
@@ -22,7 +21,6 @@
   "dependencies": {
     "@webgpu/glslang": "github:codedhead/glslang.js",
     "dat.gui": "^0.7.9",
-    "three": "^0.165.0",
     "wgpu-matrix": "^3.0.1"
   }
 }
