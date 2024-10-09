@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<head>
+   <meta charset="utf-8">
+   <meta http-equiv="X-UA-Compatible" content="IE=edge">
+   <title>WebGPU Path Tracer</title>
+   <meta name="description" content="">
+   <meta name="viewport" content="width=device-width, initial-scale=1">
+   <style>
+      #fpsDisplay {
+          position: absolute;
+          top: 10px;
+          left: 10px;
+          background-color: rgba(0, 0, 0, 0.5);
+          color: white;
+          padding: 5px;
+          font-family: Arial, sans-serif;
+      }
+
+      fieldset {
+         border: 2px solid #007BFF;
+         padding: 10px;
+         margin: 20px 0;
+         border-radius: 8px;
+      }
+
+      legend {
+         font-size: 1.2rem;
+         font-weight: bold;
+         color: #007BFF;
+      }
+  </style>
+</head>
+
+<body>
+    <table>
+      <tr>
+         <td valign="top" >
+            <canvas id="canvas" width="1200" height="800"></canvas>
+         </td>
+         <td valign="top">
+            
+            <fieldset><legend>패스&샘플링 설정</legend>
+               <label for="pathSamplingMethod">라이트샘플링 방법:</label>
+               <select id="pathSamplingMethod" value="2">
+                  <option value="0">표면반사방향</option>
+                  <option value="1">라이트소스</option>
+                  <option value="2" selected>MIS</option>
+               </select>
+               <br>
+               
+               프레임당 샘플 수(SPF):
+               <input type="number" id="numSamplesPerFrame" value="4" min="1" max="32" style="width: 40px; text-align: right;">
+               (팁: FPS가 충분하다면 SPF를 최대한 높게 설정)
+               <br>
+
+               최대 바운스:
+               <input type="number" id="maxPathBounce" value="4" min="0" max="16" style="width: 40px; text-align: right;">
+               <br>
+            </fieldset>
+
+            <fieldset><legend>카메라 설정</legend>
+               수평 FOV:
+               <input type="number" id="hFov" value="60" min="10" max="170" style="width: 40px; text-align: right;">&deg;
+               (35mm환산 focal length: <span id="fl"></span>mm)
+               <br>
+
+               렌즈 반지름:
+               <input type="number" id="lensRadius" value="0" min="0" max="1" step="0.01" style="width: 50px; text-align: right;">
+               (0이면 핀홀 카메라)
+               <br>
+
+               초점 거리: <span id="focusDistanceV" style="display: inline-block; width: 3ch; text-align: right;">1</span>
+               <input type="range" id="focusDistance" min="0.1" max="10" value=1 step="0.01" 
+                  oninput="document.getElementById('focusDistanceV').innerText = this.value">
+            </fieldset>
+
+            <fieldset><legend>Envmap 설정</legend>
+               배경 그리기
+               <input type="checkbox" id="drawBackground" checked>
+               <br>
+               
+               Envmap 회전: <span id="envmapRotAngleV" style="display: inline-block; width: 3ch; text-align: right;">0</span>&deg;
+               <input type="range" id="envmapRotAngle" min="0" max="360" value=0 step="1" 
+                  oninput="document.getElementById('envmapRotAngleV').innerText = this.value">
+            </fieldset>
+               
+            <fieldset><legend>사용법 설명</legend>
+               &bull; 카메라이동: WASD + C, space
+               <br>
+               &bull; 3d 파일(.obj 또는 .glb)을 최대 3개까지 (각각 또는 한꺼번에)화면으로 드래그 하세요..
+               <br>
+               &bull; .obj파일 텍스쳐 미지원(.glb는 지원)
+               <br>
+               &bull; 라이팅과 배경을 바꾸려면 해당 파일(.hdr)을 화면으로 드래그하세요.
+               <br>
+               &bull; 다양한 무료 hdr이미지는 다음 사이트를 참고하세요: 
+               <a href="https://hdri-haven.com" target="_blank" rel="noopener noreferrer">HDRI Haven</a>
+               <br>
+            </fieldset>
+
+            <button id="saveBtn">Save as PNG</button>
+         </td>
+      </tr>
+   </table>
+
+   <div id="fpsDisplay">FPS: 0</div>
+   
+
+   <script src="main.js"></script>
+</body>
+</html>

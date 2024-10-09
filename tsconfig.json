@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "es2017",     
+    "module": "CommonJS",
+    //"types": ["@webgpu/types"],                            
+    "moduleResolution": "node",
+    "strict": true,                                      
+    "skipLibCheck": true,
+    // "allowJs": true,
+    // "esModuleInterop": true,
+    "sourceMap": true                             
+  },
+  "exclude": ["./rtx"]
+}
