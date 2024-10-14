@@ -5,7 +5,7 @@ import { nagaModule, glslangModule, glslTranspilerModule } from './wasm_modules'
 
 const GLOBAL_NAME__HIT_ATTRIBUTES_MAX_WORDS = "_CRT_HIT_ATTRIBUTES_MAX_WORDS";
 const GLOBAL_NAME__USER_NEXT_UNUSED_BIND_SET = "_CRT_USER_NEXT_UNUSED_BIND_SET";
-const MIN_HIT_ATTRIBUTES_WORDS = 2; // barry coords + normal // modified (5->2)
+const MIN_HIT_ATTRIBUTES_WORDS = 5; // barry coords + normal
 
 const glslRtPrelude = `#version 450
 #pragma shader_stage(compute)
@@ -35,11 +35,7 @@ function canonicalShaderStageEntryName(stg: _GPUShaderStageRTX, i: number): stri
   return prefix + i;
 }
 
-export async function aggregateAndCompileShaders(
-  device: GPUDevice, 
-  descriptor: GPURayTracingPipelineDescriptor, 
-  /*tlas: GPURayTracingAccelerationContainer_top*/ vertexStrideInBytes: number // modified
-): Promise<[GPUShaderModule, number]> {
+export async function aggregateAndCompileShaders(device: GPUDevice, descriptor: GPURayTracingPipelineDescriptor, tlas: GPURayTracingAccelerationContainer_top): Promise<[GPUShaderModule, number]> {
   // TODO: parse and combine shaders here
   const [glslang, glslTranspiler, naga] = await Promise.all([glslangModule(), glslTranspilerModule(), nagaModule()]);
   if (!descriptor.stages.length) {
@@ -85,21 +81,20 @@ export async function aggregateAndCompileShaders(
     shaders_in_stage.push(i);
     maxHitAttributesNumWords = Math.max(maxHitAttributesNumWords, processed.hit_attributes_num_words);
 
-    console.debug(i, processed.forward_type_declarations(), processed.processed_entry_point_prototype())
+    // console.log(i, processed.forward_type_declarations(), processed.processed_entry_point_prototype())
     functionDecls.push(processed.forward_type_declarations() + processed.processed_entry_point_prototype() + ';');
     functionDefs.push(processed.processed_shader());
     functionInvocations.push([indexWithinStage, `{${processed.unpacking_code()} ${processed.invocation_code()} ${processed.packing_code()}}`]);
   }
 
   // TODO: impl
-  /* modified
   const [bvhGeometriesDescs, bvhReferencedGeoBuffers] = (tlas as GPURayTracingAccelerationContainer_top_Impl).getBvhGeometryBuffersAndDescriptors();
   const numGeomBuffers = bvhReferencedGeoBuffers.size;
   const bvhGeometriesDescArray = bvhGeometriesDescs.map(
     d => `{${[
       d.vBufferIndex,
       d.iBufferIndex,
-      d.vboOffset,
+      (d.vboOffset || 0), // modified2
       d.vboStride,
       (d.vioOffset || 0),
       (d.vioStride || 0),
@@ -112,16 +107,7 @@ const uint ${GLOBAL_NAME__HIT_ATTRIBUTES_MAX_WORDS} = ${maxHitAttributesNumWords
 #define _CRT_USER_BVH_GEOM_BUFFERS_INITIALIZER_LIST {${bvhGeometriesDescArray}}
 #define _CRT_USER_DEFINE_GEO_BUFFERS DEFINE_GEO_BUFFER_x${numGeomBuffers}
 #define _CRT_USER_GEO_BUFFERS_ACCESSOR_CASES(wordIndex) _GET_FROM_BUFFER_CASE_x${numGeomBuffers}(wordIndex)
-  `; */
-  // modified
-  const userPrelude = `
-const uint ${GLOBAL_NAME__USER_NEXT_UNUSED_BIND_SET} = ${maxUsedBindSet + 1};
-const uint ${GLOBAL_NAME__HIT_ATTRIBUTES_MAX_WORDS} = ${maxHitAttributesNumWords};
-#define _CRT_USER_DEFINE_GEO_BUFFERS DEFINE_GEO_BUFFER_x${2}
-#define _CRT_USER_GEO_BUFFERS_ACCESSOR_CASES(wordIndex) _GET_FROM_BUFFER_CASE_x${2}(wordIndex)
-#define VERTEX_STRIDE_IN_BYTES ${vertexStrideInBytes}
-  `; 
-  // modified -end
+  `;
 
   const userFunctionsTable = Object.values(GPUShaderStageRTX).map(stg => {
     let shaders_in_stage = stages.get(stg) || [];
@@ -137,7 +123,6 @@ const uint ${GLOBAL_NAME__HIT_ATTRIBUTES_MAX_WORDS} = ${maxHitAttributesNumWords
   // TODO: for functionDefs, analyze in => out dependency: dependency between ray_payload defs and references, 
   const completeGLSL = [glslRtPrelude, userPrelude, functionDecls.join('\n'), userFunctionsTable, glslRtEngineCode, functionDefs.join('\n')].join('\n');
   // console.log(completeGLSL)
-  
   // glsl -> spv -> wgsl
   const spirv = glslang.compileGLSL(completeGLSL, 'compute', false);
   const moduleIndex = naga.spv_in(new Uint8Array(spirv.buffer));

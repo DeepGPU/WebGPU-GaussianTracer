@@ -1,0 +1,19 @@
+{
+  "name": "bvh",
+  "collaborators": [
+    "Jun <codedhead@gmail.com>"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "bvh_bg.wasm",
+    "bvh.js",
+    "bvh_bg.js",
+    "bvh.d.ts"
+  ],
+  "module": "bvh.js",
+  "types": "bvh.d.ts",
+  "sideEffects": [
+    "./bvh.js",
+    "./snippets/*"
+  ]
+}

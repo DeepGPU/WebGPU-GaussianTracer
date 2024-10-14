@@ -84,7 +84,7 @@ function retrieveStagingBuffer(buffer: GPUBuffer): StagingBuffer {
 }
 
 // see GeometryDescriptorField::NumFields
-const WASM_GEOMETRY_DESCRIPTOR_NUM_I32 = 7; // modified
+const WASM_GEOMETRY_DESCRIPTOR_NUM_I32 = 6;
 function buildBlas(desc: GPURayTracingAccelerationContainerDescriptor_bottom, stagingBuffersToFree: Set<StagingBuffer>): BuiltBvh {
   if (!_wasm_bvh) {
     throw 'bvh wasm module not loaded'
@@ -98,7 +98,6 @@ function buildBlas(desc: GPURayTracingAccelerationContainerDescriptor_bottom, st
     const geom = desc.geometries[gi];
     const vbuf = retrieveStagingBuffer(geom.type === 'triangles' ? geom.vertex.buffer : geom.aabb.buffer);
     const vbufByteOffset = ((geom.type === 'triangles' ? geom.vertex.offset : geom.aabb.offset) || 0);
-    const vbufByteStride = ((geom.type === 'triangles' ? geom.vertex.stride : undefined) || 0); // modified
     stagingBuffersToFree.add(vbuf);
     const vidx = vbuf.id;
     _assert(vidx !== undefined, '');
@@ -112,11 +111,13 @@ function buildBlas(desc: GPURayTracingAccelerationContainerDescriptor_bottom, st
         stagingBuffersToFree.add(ibuf);
         iidx = ibuf.id;
         _assert(iidx !== undefined, '');
-        _assert(geom.index.size! > 0, '');
-        np = Math.floor(geom.index.size! / (3 * Uint32Array.BYTES_PER_ELEMENT)); // 3 indices per primitive
+        // _assert(geom.index.size! > 0, '');  
+        // np = Math.floor(geom.index.size! / (3 * Uint32Array.BYTES_PER_ELEMENT)); // 3 indices per primitive
+        np = Math.floor((geom.index.size||geom.index.buffer.size) / (3 * Uint32Array.BYTES_PER_ELEMENT)); // modified2
       } else {
-        _assert(geom.vertex.size! > 0, '');
-        np = Math.floor(geom.vertex.size! / (3 * geom.vertex.stride)); // 3 vertices per primitive
+        // _assert(geom.vertex.size! > 0, '');
+        // np = Math.floor(geom.vertex.size! / (3 * geom.vertex.stride)); // 3 vertices per primitive
+        np = Math.floor((geom.vertex.size||geom.vertex.buffer.size) / (3 * geom.vertex.stride)); // modified2
       }
     }
     numTotalPrimitives += np;
@@ -127,7 +128,6 @@ function buildBlas(desc: GPURayTracingAccelerationContainerDescriptor_bottom, st
       vbufByteOffset,
       iidx!,
       ibufByteOffset,
-      vbufByteStride, // modified
     ], 2 + gi * WASM_GEOMETRY_DESCRIPTOR_NUM_I32);
   }
   geomBufferIds_i32[1] = numTotalPrimitives;
@@ -293,12 +293,10 @@ export class Tlas {
       }
 
       blasGPUBuffer = device.createBuffer({
-        label: 'rtx_blasBuffer',
         size: blasTotalBufferSize,
         usage: GPUBufferUsage.STORAGE,
         mappedAtCreation: true,
       });
-      console.log('[Blas buffer size]', blasTotalBufferSize);
       const buf = blasGPUBuffer.getMappedRange();
       // same order as entry_index, geom_id_offset calculation
       let byteOffset = 0;
@@ -363,12 +361,10 @@ export class Tlas {
       const tlas_u8 = builtTlas.serialized.u8_view() as Uint8Array;
 
       tlasGPUBuffer = device.createBuffer({
-        label: 'rtx_tlasBuffer',
         size: tlas_u8.byteLength,
         usage: GPUBufferUsage.STORAGE,
         mappedAtCreation: true,
       });
-      console.log('[Tlas buffer size]', tlas_u8.byteLength);
       const buf = tlasGPUBuffer.getMappedRange();
       new Uint8Array(buf, 0).set(tlas_u8);
       // console.debug('@@gpu_tlas', new Uint32Array(tlas_u8.buffer, tlas_u8.byteOffset, tlas_u8.byteLength / 4));

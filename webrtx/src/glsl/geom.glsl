@@ -27,11 +27,9 @@ struct BvhGeometryDescriptor {
   uint owningGeometryFlags;  // Geometry.OPAQUE etc
 };
 
-/* modified
 // this can be a uniform?
 const BvhGeometryDescriptor bvhReferencedGeomBuffer[] =
     _CRT_USER_BVH_GEOM_BUFFERS_INITIALIZER_LIST;
-*/
 
 // each buffer is described by BvhGeometryDescriptor
 

@@ -1,0 +1,19 @@
+{
+  "name": "glsl",
+  "collaborators": [
+    "Jun <codedhead@gmail.com>"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "glsl_bg.wasm",
+    "glsl.js",
+    "glsl_bg.js",
+    "glsl.d.ts"
+  ],
+  "module": "glsl.js",
+  "types": "glsl.d.ts",
+  "sideEffects": [
+    "./glsl.js",
+    "./snippets/*"
+  ]
+}

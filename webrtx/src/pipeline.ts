@@ -7,7 +7,7 @@ const WEBRTX_SHADER_UNUSED = 0xff;
 export class GPURayTracingPipelineImpl implements GPURayTracingPipeline {
   constructor(
     private readonly _descriptor: GPURayTracingPipelineDescriptor,
-    // private readonly _todo_decouple_tlas: GPURayTracingAccelerationContainer_top, // modified
+    private readonly _todo_decouple_tlas: GPURayTracingAccelerationContainer_top,
     readonly comp: GPUComputePipeline,
     private readonly _rtInternalResourcesBindingSet: number) {
   }
@@ -17,10 +17,9 @@ export class GPURayTracingPipelineImpl implements GPURayTracingPipeline {
     return this._rtInternalResourcesBindingSet;
   }
 
-  /* modified
   todo_drop_getBoundAccelerationStructure(): GPURayTracingAccelerationContainer_top {
     return this._todo_decouple_tlas;
-  } */
+  }
 
   getBindGroupLayout(
     index: number

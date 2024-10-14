@@ -56,9 +56,6 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
   uint closestSbtIndex = 0;
   int localGeometryId = -1;
   uint localPrimitiveId = 0;
-  uint instanceId = 0;          // modified
-  int instanceCustomIndex = 0;  // modified
-  mat4x3 ObjectToWorldEXT;      // modified
 
   uint _cur = 0;  // topLevel.handle
   while (_cur < TRAVERSE_MAX_INT) {
@@ -109,9 +106,6 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
     vec3 invObjectRayDir = 1.0 / _crt_ObjectRayDirectionEXT;
     // reset previous instanceId?
 
-    uint instanceId2 = node.instanceId;                   // modified
-    int instanceCustomIndex2 = node.instanceCustomIndex;  // modified
-
     // entering blas tree
     _cur = node.entry_index;
     uint blas_index_offset = _cur;
@@ -138,27 +132,15 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
       float t = _crt_RayTminEXT - 1.0;
       uint hitKind = 0;
       // vBufferIndex always point to the geometry
-      // BvhGeometryDescriptor g = bvhReferencedGeomBuffer[node.geometryId + blas_geometry_id_offset]; // modified
-      BvhGeometryDescriptor g; // modified
+      BvhGeometryDescriptor g =
+          bvhReferencedGeomBuffer[node.geometryId + blas_geometry_id_offset];
       uint sbtIndex = sbtHitGroupIndex(sbtInstanceOffset, node.geometryId,
                                        numRayTypes, rayType);
-      // uint terminate_or_ignore = _CRT_HIT_REPORT_IGNORE; // modified
-
+      uint terminate_or_ignore = _CRT_HIT_REPORT_IGNORE;
       // TODO: per spec, all instances in the leaf node should contain same
       // geom type? if (node.geometryType == GEOM_TYPE_TRIANGLE) {
       bool hit = false;
-      // if (g.owningGeometryType_todo_deprecate == GEOM_TYPE_TRIANGLE)  // modified
-      {
-        // modified -start
-        uint iOffset = _CRT_SBT_BUFFER_NAME[sbtIndex/4 + 2] ;
-        g.vBufferIndex = 0;
-        g.iBufferIndex = iOffset != uint(-1) ? 1 : -1;
-        g.vboOffset = _CRT_SBT_BUFFER_NAME[sbtIndex/4 + 1] * VERTEX_STRIDE_IN_BYTES;
-        g.vboStride = VERTEX_STRIDE_IN_BYTES; 
-        g.vioOffset = iOffset * 4;
-        g.vioStride = 12;
-        // modified -end
-
+      if (g.owningGeometryType_todo_deprecate == GEOM_TYPE_TRIANGLE) {
         vec3 positions[3] =
             getTriangleVertexPositions(g, node.entry_index_or_primitive_id);
         vec3 n;
@@ -168,7 +150,6 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
             _crt_ObjectRayDirectionEXT, _crt_RayTmaxEXT, positions[0],
             positions[1], positions[2], n, t, buf_hitAttributes[0],
             buf_hitAttributes[1]);
-        /* modified
         if (hit) {
           n = normalize((n * _crt_WorldToObjectEXT).xyz);
           buf_hitAttributes[2] = n.x;
@@ -177,10 +158,8 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
           hitKind = dot(n, _crt_WorldRayDirectionEXT) > 0
                         ? gl_HitKindFrontFacingTriangleEXT
                         : gl_HitKindBackFacingTriangleEXT;
-        }*/
-      }  
-      /* modified
-      else {
+        }
+      } else {
         // skip duplicated AABB test if containing only one primitive
         // TODO: or always skip this aabb test?
         // TODO: aabb test tmax
@@ -194,10 +173,9 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
             _crt_ObjectToWorldEXT, node.geometryId,
             node.entry_index_or_primitive_id, buf_hitAttributes);
         // }
-      } */ 
-
+      }
+      
       // modified -start
-      bool stop_search = false;
       if (hit) 
       {
         uint aniHit_ret = _CRT_HIT_REPORT_CONFIRMED;
@@ -222,10 +200,7 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
           buf_closestHitAttributes = buf_hitAttributes;
           _crt_RayTmaxEXT = t;
           localGeometryId = node.geometryId;
-          localPrimitiveId = node.entry_index_or_primitive_id;
-          instanceId = instanceId2;                       
-          instanceCustomIndex = instanceCustomIndex2;     
-          ObjectToWorldEXT = _crt_ObjectToWorldEXT;       
+          localPrimitiveId = node.entry_index_or_primitive_id;   
         }
 
         if (aniHit_ret == _CRT_HIT_REPORT_TERMINATE) {
@@ -233,18 +208,15 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
           break;
         }
       }
-     
-      if (node.exit_index == TRAVERSE_MAX_INT) 
-      {
+      // modified -end
+
+      if (node.exit_index == TRAVERSE_MAX_INT) {
         // leaving blas into tlas tree
         _cur = instance_exit_index;
         break;
-      } 
-      else 
-      {
+      } else {
         _cur = node.exit_index + blas_index_offset;
       }
-      // modified -end
     }
   }
 
@@ -254,145 +226,11 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
         invokeShaderIndirect_closestHit(closestSbtIndex, _crt_WorldRayOriginEXT,
                                         _crt_RayTminEXT, _crt_WorldRayDirectionEXT,
                                         _crt_RayTmaxEXT, localGeometryId, localPrimitiveId, 
-                                        instanceId,             // modified
-                                        instanceCustomIndex,    // modified
-                                        ObjectToWorldEXT,       // modified
                                         buf_closestHitAttributes);
   } else {
     invokeShaderIndirect_rayMiss(sbtRayMissIndex(missIndex),
                                  _crt_WorldRayDirectionEXT);
   }
-}
-
-bool shadowRayHit(
-    uint rayType,      // a.k.a sbtRecordOffset,
-    uint numRayTypes,  // a.k.a sbtRecordStride,
-    const vec3 _crt_WorldRayOriginEXT,
-    const float _crt_RayTminEXT,
-    const vec3 _crt_WorldRayDirectionEXT, 
-    float _crt_RayTmaxEXT) {
-  vec3 invWorldRayDir = 1.0 / _crt_WorldRayDirectionEXT;
-
-  uint _cur = 0;  // topLevel.handle
-  while (_cur < TRAVERSE_MAX_INT) {
-    TlasBvhNode node = tlasBvhTreeNodes[_cur];
-    if (!intersect_aabb(_crt_WorldRayOriginEXT, invWorldRayDir, _crt_RayTminEXT,
-                        _crt_RayTmaxEXT, node.aabb)) {
-      _cur = node.exit_index;
-      continue;
-    }
-    if (node.is_leaf == 0) {  // interior node
-      // +offset if in blas tree
-      _cur = node.entry_index;
-      continue;
-    }
-
-    // TLAS leaf
-    uint sbtInstanceOffset = node.sbtInstanceOffset;
-    uint blas_geometry_id_offset = node.blas_geometry_id_offset;
-
-    mat4x3 _crt_WorldToObjectEXT =
-        mat4x3(vec3(node.transformToObject[0], node.transformToObject[1],
-                    node.transformToObject[2]),
-               vec3(node.transformToObject[3], node.transformToObject[4],
-                    node.transformToObject[5]),
-               vec3(node.transformToObject[6], node.transformToObject[7],
-                    node.transformToObject[8]),
-               vec3(node.transformToObject[9], node.transformToObject[10],
-                    node.transformToObject[11]));
-
-    vec3 _crt_ObjectRayOriginEXT = _crt_WorldToObjectEXT * vec4(_crt_WorldRayOriginEXT, 1.0);
-    vec3 _crt_ObjectRayDirectionEXT = _crt_WorldToObjectEXT * vec4(_crt_WorldRayDirectionEXT, 0.0);
-    vec3 invObjectRayDir = 1.0 / _crt_ObjectRayDirectionEXT;
-    // reset previous instanceId?
-
-    // entering blas tree
-    _cur = node.entry_index;
-    uint blas_index_offset = _cur;
-    uint instance_exit_index = node.exit_index;
-    while (_cur < TRAVERSE_MAX_INT) {
-      BlasBvhNode node = blasesBvhTreeNodes[_cur];
-      // TODO: skip blas root if instance transform matrix is absent or identity
-      if (!intersect_aabb(_crt_ObjectRayOriginEXT, invObjectRayDir,
-                          _crt_RayTminEXT, _crt_RayTmaxEXT, node.aabb)) {
-        if (node.exit_index ==
-            TRAVERSE_MAX_INT) {  // leaving blas into tlas tree
-          _cur = instance_exit_index;
-          break;
-        } else {
-          _cur = node.exit_index + blas_index_offset;
-        }
-        continue;
-      } else if (node.geometryId < 0) {  // interior node
-        _cur = node.entry_index_or_primitive_id + blas_index_offset;
-        continue;
-      }
-
-      float buf_hitAttributes[_CRT_HIT_ATTRIBUTES_MAX_WORDS];
-      float t = _crt_RayTminEXT - 1.0;
-      BvhGeometryDescriptor g; // modified
-      uint sbtIndex = sbtHitGroupIndex(sbtInstanceOffset, node.geometryId,
-                                       numRayTypes, rayType);
-
-      // TODO: per spec, all instances in the leaf node should contain same
-      // geom type? if (node.geometryType == GEOM_TYPE_TRIANGLE) {
-      bool hit = false;
-      // if (g.owningGeometryType_todo_deprecate == GEOM_TYPE_TRIANGLE)  // modified
-      {
-        // modified -start
-        uint iOffset = _CRT_SBT_BUFFER_NAME[sbtIndex/4 + 2] ;
-        g.vBufferIndex = 0;
-        g.iBufferIndex = iOffset != uint(-1) ? 1 : -1;
-        g.vboOffset = _CRT_SBT_BUFFER_NAME[sbtIndex/4 + 1] * VERTEX_STRIDE_IN_BYTES;
-        g.vboStride = VERTEX_STRIDE_IN_BYTES; 
-        g.vioOffset = iOffset * 4;
-        g.vioStride = 12;
-        // modified -end
-
-        vec3 positions[3] =
-            getTriangleVertexPositions(g, node.entry_index_or_primitive_id);
-        vec3 n;
-        // TODO: use object ray instead?
-        hit = intersect_triangle_branchless(
-            _crt_ObjectRayOriginEXT, _crt_RayTminEXT,
-            _crt_ObjectRayDirectionEXT, _crt_RayTmaxEXT, positions[0],
-            positions[1], positions[2], n, t, buf_hitAttributes[0],
-            buf_hitAttributes[1]);
-      }  
-      /* modified
-      else {
-        // skip duplicated AABB test if containing only one primitive
-        // TODO: or always skip this aabb test?
-        // TODO: aabb test tmax
-        // if (node.numPrimitives == 1 ||
-        //     intersect_aabb(_crt_WorldRayOriginEXT, invRayDir,
-        //     getGeometryAabb(g))) {
-        hit = invokeShaderIndirect_intersect(
-            sbtIndex, _crt_WorldRayOriginEXT, _crt_RayTminEXT,
-            _crt_WorldRayDirectionEXT, _crt_RayTmaxEXT, _crt_ObjectRayOriginEXT,
-            t, _crt_ObjectRayDirectionEXT, _crt_WorldToObjectEXT,
-            _crt_ObjectToWorldEXT, node.geometryId,
-            node.entry_index_or_primitive_id, buf_hitAttributes);
-        // }
-      } */ 
-
-      if (hit) 
-        return true;
-     
-      if (node.exit_index == TRAVERSE_MAX_INT) 
-      {
-        // leaving blas into tlas tree
-        _cur = instance_exit_index;
-        break;
-      } 
-      else 
-      {
-        _cur = node.exit_index + blas_index_offset;
-      }
-    }
-  }
-
-  return false;
 }
 
 #endif // _WEBRTX_TRACE_

@@ -45,11 +45,9 @@ export default class GPURayTracingPassEncoderImpl implements GPURayTracingPassEn
     if (!this._pipeline) {
       throw 'no ray tracing pipeline is set'
     }
-    /* modified
     if (this._boundAS !== this._pipeline.todo_drop_getBoundAccelerationStructure()) {
       throw 'bound acceleration structure not matching the one used for building the ray tracing pipeline'
-    } */
-
+    }
     depth = depth || 1;
     if ((width % COMP_SHADER_WORKGROUP_SIZE[0])
       || (height % COMP_SHADER_WORKGROUP_SIZE[1])

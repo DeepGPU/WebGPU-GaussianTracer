@@ -37,7 +37,6 @@ pub struct BuiltBvh {
 #[wasm_bindgen]
 impl StagingBuffer {
     pub fn free(&self) {
-        log!("free buffer {}", self.id);  // modified
         staging_buffers_map().remove(&self.id);
     }
 
@@ -123,9 +122,8 @@ enum GeometryDescriptorField {
     VbufByteOffset = 3,
     IbufId = 4,
     IbufByteOffset = 5,
-    VbufByteStride = 6, // modified
 
-    NumFields = 7, // modified
+    NumFields = 6,
 }
 
 // TODO: maybe make this an enum struct, Aabb/Triangle
@@ -140,8 +138,6 @@ struct Primitive<'a> {
     geometry_type: GeometryType,
     vbuf: &'a [f32],
     ibuf: Option<&'a [u32]>,
-
-    stride: u32,    // modified
 }
 
 impl<'a> Bounded for Primitive<'a> {
@@ -161,7 +157,7 @@ impl<'a> Bounded for Primitive<'a> {
             let mut aabb = AABB::empty();
             for i in 0..3 {
                 // NOTE: hardcoded 3xfloats vbo stride for our compact staging buffers
-                let vi = indices[i] * (self.stride as usize); // modified
+                let vi = indices[i] * 3;
                 aabb.grow_mut(&Point3::new(
                     self.vbuf[vi],
                     self.vbuf[vi + 1],
@@ -288,8 +284,6 @@ pub fn build_blas(blas_descriptor_buffer_id: u32) -> BuiltBvh {
             let ibuf_byte_offset = geom[GeometryDescriptorField::IbufByteOffset as usize] as u32;
             ibuf_u32_le = Some(unsafe { ibuf[(ibuf_byte_offset as usize)..].align_to().1 });
         }
-
-        let stride = (geom[GeometryDescriptorField::VbufByteStride as usize] as u32) / 4;  // modified
         for pi in 0..np as u32 {
             primitives.push(Primitive {
                 blas_local_geometry_id: gi,
@@ -299,8 +293,6 @@ pub fn build_blas(blas_descriptor_buffer_id: u32) -> BuiltBvh {
                     .unwrap(),
                 vbuf: vbuf_f32_le,
                 ibuf: ibuf_u32_le,
-
-                stride: stride,  // modified
             });
         }
     }

@@ -53,6 +53,8 @@ export class PackedGaussians {
     gaussiansBuffer: ArrayBuffer;
     positionsBuffer: ArrayBuffer;
 
+    public gaussianData: Record<string, any>[];
+
     private static decodeHeader(plyArrayBuffer: ArrayBuffer): [number, Record<string, string>, DataView] {
         /* decodes the .ply file header and returns a tuple of:
             * - vertexCount: number of vertices in the point cloud
@@ -158,9 +160,9 @@ export class PackedGaussians {
 
         const arrangedVertex: Record<string, any> = {
             position: [rawVertex.x, rawVertex.y, rawVertex.z],
-            logScale: [rawVertex.scale_0, rawVertex.scale_1, rawVertex.scale_2],
+            scale: [rawVertex.scale_0, rawVertex.scale_1, rawVertex.scale_2],
             rotQuat: [rawVertex.rot_0, rawVertex.rot_1, rawVertex.rot_2, rawVertex.rot_3],
-            opacityLogit: rawVertex.opacity,
+            opacity: rawVertex.opacity,
             shCoeffs: shCoeffs,
         };
         return arrangedVertex;
@@ -196,9 +198,9 @@ export class PackedGaussians {
         // define the layout of a single point
         this.gaussianLayout = new Struct([
             ['position', new vec3(f32)],
-            ['logScale', new vec3(f32)],
+            ['scale', new vec3(f32)],
             ['rotQuat', new vec4(f32)],
-            ['opacityLogit', f32],
+            ['opacity', f32],
             ['shCoeffs', new StaticArray(new vec3(f32), this.nShCoeffs)],
         ]);
         // define the layout of the entire point cloud
@@ -217,12 +219,28 @@ export class PackedGaussians {
         var readOffset = 0;
         var gaussianWriteOffset = 0;
         var positionWriteOffset = 0;
+        this.gaussianData = [];
         for (let i = 0; i < vertexCount; i++) {
             const [newReadOffset, rawVertex] = this.readRawVertex(readOffset, vertexData, propertyTypes);
+            {
+                rawVertex['scale_0'] = Math.exp(rawVertex['scale_0']);
+                rawVertex['scale_1'] = Math.exp(rawVertex['scale_1']);
+                rawVertex['scale_2'] = Math.exp(rawVertex['scale_2']);
+                const norm = Math.sqrt(rawVertex['rot_0']**2 + rawVertex['rot_1']**2 + rawVertex['rot_2']**2 + rawVertex['rot_3']**2);
+                rawVertex['rot_0'] /= norm;
+                rawVertex['rot_1'] /= norm;
+                rawVertex['rot_2'] /= norm;
+                rawVertex['rot_3'] /= norm;
+                rawVertex['opacity'] = 1.0 / (1.0 + Math.exp(-rawVertex['opacity']));
+            }
             readOffset = newReadOffset;
+
+            const gsData = this.arrangeVertex(rawVertex, shFeatureOrder);
+            this.gaussianData.push(gsData);
+
             gaussianWriteOffset = this.gaussianLayout.pack(
                 gaussianWriteOffset,
-                this.arrangeVertex(rawVertex, shFeatureOrder),
+                gsData,
                 gaussianWriteView,
             );
 

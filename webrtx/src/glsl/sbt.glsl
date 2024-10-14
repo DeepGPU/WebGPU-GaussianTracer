@@ -58,9 +58,6 @@ void invokeShaderIndirect_closestHit(
     const float _crt_RayTminEXT, const vec3 _crt_WorldRayDirectionEXT,
     const float _crt_RayTmaxEXT,  // float _gl_RayTmaxEXT, uint _gl_HitKindEXT,
     const int _crt_GeometryIndexEXT, const uint _crt_PrimitiveID,
-    const uint _crt_InstanceID,               // modified
-    const int _crt_InstanceCustomIndexEXT,   // modified
-    const mat4x3 _crt_ObjectToWorldEXT,       // modified
     const float _CRT_PARAM_HIT_ATTRIBUTES[_CRT_HIT_ATTRIBUTES_MAX_WORDS]
     // TODO: make these global for non-recursive ray tracing?
     // ,int gl_PrimitiveID, int gl_InstanceID, int gl_InstanceCustomIndexEXT,

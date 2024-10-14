@@ -8,9 +8,6 @@ export type _GPURayTracingAccelerationInstanceUsage = number & { readonly brand:
 // Extends existing WebGPU interfaces
 declare global {
   interface GPUDevice {
-
-    readonly linearSampler: GPUSampler; // modified
-
     /**
      * The size in bytes of the shader header.
      */
@@ -46,9 +43,7 @@ declare global {
      *              Current implementation requires it to properly set states
      *              in the combined shader of the ray tracing pipeline.
      */
-    // createRayTracingPipeline(descriptor: GPURayTracingPipelineDescriptor, tlas: GPURayTracingAccelerationContainer_top): Promise<GPURayTracingPipeline>;  // modified
-    createRayTracingPipeline(descriptor: GPURayTracingPipelineDescriptor, vertexStrideInBytes: number): Promise<GPURayTracingPipeline>;  // modified
-
+    createRayTracingPipeline(descriptor: GPURayTracingPipelineDescriptor, tlas: GPURayTracingAccelerationContainer_top): Promise<GPURayTracingPipeline>;
   }
 
   interface GPUCommandEncoder {
@@ -216,8 +211,6 @@ declare global {
     usage: _GPURayTracingAccelerationContainerUsage;
     level: 'top';
     instances: GPURayTracingAccelerationInstanceDescriptor[];
-    uniqueVertexBuffer?: GPUBuffer; // modified
-    uniqueIndexBuffer?: GPUBuffer; // modified
   }
 
   interface GPURayTracingShaderStageDescriptor {

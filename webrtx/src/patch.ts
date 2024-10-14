@@ -43,21 +43,7 @@ if (typeof GPUAdapter !== 'undefined') {
 
       patch();
     }
-    return _original.call(this, descriptor)
-      // modified
-      .then(
-        device => {
-          (GPUDevice.prototype.linearSampler as GPUSampler) = device.createSampler({
-            magFilter: 'linear',
-            minFilter: 'linear',
-            addressModeU: 'repeat',
-            addressModeV: 'repeat',
-          });
-          return device;
-        },
-        undefined
-      );
-      // modified -end
+    return _original.call(this, descriptor);
   };
 }
 
@@ -203,11 +189,10 @@ function patch() {
   // TODO: decouple tlas from ray tracing pipeline creation
   GPUDevice.prototype.createRayTracingPipeline = async function (
     descriptor: GPURayTracingPipelineDescriptor,
-    // todo_drop_tlas: GPURayTracingAccelerationContainer_top, // modified
-    vertexStrideInBytes: number // modified
+    todo_drop_tlas: GPURayTracingAccelerationContainer_top,
   ): Promise<GPURayTracingPipeline> {
-    const [megaShaderModule, nextUnusedBindSet] = await aggregateAndCompileShaders(this, descriptor, /*todo_drop_tlas*/ vertexStrideInBytes); // modified
-    return new GPURayTracingPipelineImpl(descriptor, /*todo_drop_tlas,*/ this.createComputePipeline({  // modified
+    const [megaShaderModule, nextUnusedBindSet] = await aggregateAndCompileShaders(this, descriptor, todo_drop_tlas);
+    return new GPURayTracingPipelineImpl(descriptor, todo_drop_tlas, this.createComputePipeline({
       // TODO: allow layout
       layout: 'auto',
       compute: {

@@ -56,7 +56,6 @@ export class GPURayTracingAccelerationContainer_top_Impl implements GPURayTracin
       const data8 = layout.getFinalUint8Array();
 
       this._rtUniformParams = device.createBuffer({
-        label: 'rtx_uniformBuffer',
         size: data8.byteLength,
         usage: GPUBufferUsage.UNIFORM,
         mappedAtCreation: true,
@@ -87,29 +86,14 @@ export class GPURayTracingAccelerationContainer_top_Impl implements GPURayTracin
       resource: {
         buffer: blasesBuffer,
       },
-    }
-    // modified
-    , {
-      binding: BP_GEOM_BUFFERS_START,
-      resource: {
-        buffer: this._descriptor.uniqueVertexBuffer!,
-      },
-    } , {
-      binding: BP_GEOM_BUFFERS_START + 1,
-      resource: {
-        buffer: this._descriptor.uniqueIndexBuffer!,
-      },
-    }
-    // modified -end
-    ,];
+    },];
 
-    /* modified
     entries.push(...this._tlas.allGeomBuffersInOrder().map((b, i) => ({
       binding: BP_GEOM_BUFFERS_START + i,
       resource: {
         buffer: b,
       },
-    }))); */
+    })));
 
     // _debugAssert(!!this._bindGroupLayout, 'missing _bindGroupLayout');
     this._bindGroup = device.createBindGroup({

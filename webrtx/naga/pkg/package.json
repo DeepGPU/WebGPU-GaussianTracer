@@ -1,0 +1,19 @@
+{
+  "name": "naga",
+  "collaborators": [
+    "Jun <codedhead@gmail.com>"
+  ],
+  "version": "0.1.0",
+  "files": [
+    "naga_bg.wasm",
+    "naga.js",
+    "naga_bg.js",
+    "naga.d.ts"
+  ],
+  "module": "naga.js",
+  "types": "naga.d.ts",
+  "sideEffects": [
+    "./naga.js",
+    "./snippets/*"
+  ]
+}
