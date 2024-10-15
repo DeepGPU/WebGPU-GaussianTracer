@@ -122,7 +122,7 @@ const uint ${GLOBAL_NAME__HIT_ATTRIBUTES_MAX_WORDS} = ${maxHitAttributesNumWords
 
   // TODO: for functionDefs, analyze in => out dependency: dependency between ray_payload defs and references, 
   const completeGLSL = [glslRtPrelude, userPrelude, functionDecls.join('\n'), userFunctionsTable, glslRtEngineCode, functionDefs.join('\n')].join('\n');
-  // console.log(completeGLSL)
+  console.log(completeGLSL)
   // glsl -> spv -> wgsl
   const spirv = glslang.compileGLSL(completeGLSL, 'compute', false);
   const moduleIndex = naga.spv_in(new Uint8Array(spirv.buffer));

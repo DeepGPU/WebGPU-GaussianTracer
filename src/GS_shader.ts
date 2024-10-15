@@ -51,7 +51,8 @@ const COMMON_CONSTANTS = `
     const float SH_C3_5 = 1.445305721320277f;
     const float SH_C3_6 = -0.5900435899266435f;
 
-    const bool debug = true;
+    const uint debugMode = 2;
+    const bool antialiasing = false;
 #endif
 `;
 
@@ -66,6 +67,9 @@ const STRUCT_RAYPAYLOAD = `
     struct RayPayload {
         HitInfo k_closest[MAX_K];
         vec3 debugColor;
+        uint hitCount;
+        uint hitCount2;
+        uint hitCount3;
     };
 
     layout(location = 0) rayPayloadEXT RayPayload payload;
@@ -190,7 +194,38 @@ vec4 tracePath(vec3 rayOrigin, vec3 rayDir)
     float T = 1.0;
     float t_curr = g.t_min;
     const float epsillon = 1e-4;
-    
+   
+    payload.hitCount = 0;
+
+    if (debugMode == 2)
+    {
+        for(int i=0; i<g.k; i++)
+            payload.k_closest[i].t = g.t_max;
+        
+        uint rayFlags = gl_RayFlagsCullBackFacingTrianglesEXT |
+                        gl_RayFlagsSkipClosestHitShaderEXT;
+        traceRayEXT(
+            topLevelAS, rayFlags, 0xFF, 0, 1, 0, 
+            rayOrigin, t_curr, rayDir, g.t_max, 0);  
+        
+        if(payload.hitCount == 0)
+            return vec4(0,0,0, T);
+        else if(payload.hitCount < 20)
+            return vec4(0.5,0.5,0, T);
+        else if(payload.hitCount < 40)
+            return vec4(0.5,0,0.5, T);
+        else if(payload.hitCount < 60)
+            return vec4(0,0.5,0.5, T);
+        else if(payload.hitCount < 80)
+            return vec4(0.5,0,0, T);
+        else if(payload.hitCount < 100)
+            return vec4(0,0.5,0, T);
+        else if(payload.hitCount < 150)
+            return vec4(0,0,0.5, T);
+        else
+            return vec4(0.5,0.5,0.5, T);
+    }
+
     while(g.T_min < T && t_curr < g.t_max) 
     {
         for(int i=0; i<g.k; i++)
@@ -199,11 +234,11 @@ vec4 tracePath(vec3 rayOrigin, vec3 rayDir)
             payload.k_closest[i].particleIndex = uint(-1);
         }
 
+        uint rayFlags = gl_RayFlagsCullBackFacingTrianglesEXT |
+                        gl_RayFlagsSkipClosestHitShaderEXT;
         traceRayEXT(
-            topLevelAS, gl_RayFlagsCullBackFacingTrianglesEXT, 0xFF, 0, 1, 0, 
+            topLevelAS, rayFlags, 0xFF, 0, 1, 0, 
             rayOrigin, t_curr, rayDir, g.t_max, 0);  
-
-        return vec4(0.5,0,0, T);
 
         t_curr = payload.k_closest[g.k-1].t + epsillon; 
 
@@ -231,30 +266,38 @@ vec4 tracePath(vec3 rayOrigin, vec3 rayDir)
 
 void main() 
 {
-    const vec3 cameraX = g.toWorld[0].xyz;
-    const vec3 cameraY = -g.toWorld[1].xyz;
+    const vec3 cameraX = -g.toWorld[0].xyz;
+    const vec3 cameraY = g.toWorld[1].xyz;
     const vec3 cameraZ = -g.toWorld[2].xyz;
     const vec3 cameraPos = g.toWorld[3].xyz;
     const uint bufferOffset = gl_LaunchSizeEXT.x * gl_LaunchIDEXT.y + gl_LaunchIDEXT.x;
     uint seed = getNewSeed(bufferOffset, g.accumulatedFrames, 8);
-    vec2 ndc = (vec2(gl_LaunchIDEXT.xy) + vec2(rng(seed), rng(seed))) / vec2(gl_LaunchSizeEXT.xy) * 2.0 - 1.0; 
+    vec2 pixelOff = antialiasing ? vec2(rng(seed), rng(seed)) : vec2(0.5);
+    vec2 ndc = (vec2(gl_LaunchIDEXT.xy) + pixelOff) / vec2(gl_LaunchSizeEXT.xy) * 2.0 - 1.0; 
     vec3 rayDir = normalize(ndc.x*g.cameraAspect.x*cameraX + ndc.y*g.cameraAspect.y*cameraY + cameraZ);
     
-    if(debug)
+    vec3 newRadiance;
+
+    if(debugMode == 1)
     {
+        // gl_RayFlagsOpaqueEXT means that anyhit shader does not called
         traceRayEXT(
-            topLevelAS, 0, 0xFF, 0, 1, 0, 
+            topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0,    
             cameraPos, g.t_min, rayDir, g.t_max, 0);  
-        color[bufferOffset] = vec4(payload.debugColor, 1.0);
-        return;
+        newRadiance = payload.debugColor;
     }
-    vec3 newRadiance = tracePath(cameraPos, rayDir).rgb;
-    color[bufferOffset] = vec4(newRadiance, 1.0);
+    else
+        newRadiance = tracePath(cameraPos, rayDir).rgb;
 
-    // vec3 avrRadiance = (g.accumulatedFrames == 0) ? newRadiance 
-    //     : mix(color[bufferOffset].xyz, newRadiance, 1.f / (g.accumulatedFrames + 1.0f));
-
-    // color[bufferOffset] = vec4(avrRadiance, 1.0);
+    if(!antialiasing)
+        color[bufferOffset] = vec4(newRadiance, 1.0);
+    else
+    {
+        vec3 avrRadiance = (g.accumulatedFrames == 0) ? newRadiance 
+            : mix(color[bufferOffset].xyz, newRadiance, 1.f / (g.accumulatedFrames + 1.0f));
+    
+        color[bufferOffset] = vec4(avrRadiance, 1.0);
+    }
 }
 `;
 
@@ -266,13 +309,6 @@ void main()
 
     payload.debugColor = computeRadiance(gp, gl_WorldRayDirectionEXT);
     // payload.debugColor = computeRadiance(gp, normalize(gp.position - gl_WorldRayOriginEXT)); 
-
-    // if(k == 5)
-    //     payload.debugColor = vec3(1,0,0);
-    // if(k == 6)
-    //     payload.debugColor = vec3(0,1,0);
-    // if(k == 7)
-    //     payload.debugColor = vec3(0,0,1);
 }
 `;
 
@@ -286,27 +322,28 @@ void swap(inout HitInfo a, inout HitInfo b)
 
 void main() 
 {
-    if(debug)
-        return;
+    payload.hitCount++;
+
     uint particleIndex = _CRT_SBT_BUFFER_NAME[_CRT_PARAM_SHADER_RECORD_WORD_OFFSET];  
     HitInfo hitInfo = HitInfo(gl_HitTEXT, particleIndex);
     
     for(int i=0; i<g.k; i++) 
     {
-        if(hitInfo.t < payload.k_closest[i].t) {    // The paper seems to have a errata in the inequality sign.
+        if(hitInfo.t < payload.k_closest[i].t)    // The paper seems to have a errata in the inequality sign.
             swap(hitInfo, payload.k_closest[i]);
-        }
     }
 
-    if(gl_HitTEXT < payload.k_closest[g.k-1].t)
+    _crt_hit_report = floatBitsToUint(payload.k_closest[g.k-1].t);
+    return;
+
+    if(gl_HitTEXT < payload.k_closest[g.k-1].t)  
     {
-        // not commit
-        // ignoreIntersectionEXT();
-        _crt_hit_report = _CRT_HIT_REPORT_IGNORE;
+         // not commit
+        _crt_hit_report = _CRT_HIT_REPORT_IGNORE;    // ignoreIntersectionEXT(); in vulkan ray tracing extension
     }
-    else
+    else     
     {
-        // commit 
+         // commit 
     }
 }
 `;
@@ -344,10 +381,6 @@ function code_closesthit_shader(hit_array_size: number) {
 }
 
 export {
-  RAY_GENERATION_SHADER,
-  RAY_ANY_HIT_SHADER,
-  DEBUG_CLOSEST_HIT_SHADER,
-
   code_raygen_shader,
   code_anyhit_shader,
   code_closesthit_shader,

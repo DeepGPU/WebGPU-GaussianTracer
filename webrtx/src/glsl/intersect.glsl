@@ -70,6 +70,28 @@ bool intersect_triangle_branchless(const vec3 ray_origin, const float ray_tmin,
           (beta + gamma <= 1));
 }
 
+bool intersect_triangle_branchless0(const vec3 ray_origin, const float ray_tmin,
+                                   const vec3 ray_dir, const float ray_tmax,
+                                   const vec3 p0, const vec3 p1, const vec3 p2,
+                                   out vec3 n, out float t, out float beta,
+                                   out float gamma) {
+  const vec3 e0 = p1 - p0;
+  const vec3 e1 = p0 - p2;
+  n = cross(e1, e0);
+  const vec3 e2 = (1.f / dot(n, ray_dir)) * (p0 - ray_origin);
+  t = dot(n, e2);
+
+  if (t <= ray_tmin || ray_tmax <= t)
+    return false;
+
+  const vec3 i = cross(ray_dir, e2);
+  beta = dot(i, e1);
+  gamma = dot(i, e0);
+
+  return ((beta >= 0.f) && (gamma >= 0.f) && (beta + gamma <= 1));
+}
+
+
 bool intersect_triangle_earlyexit(Ray ray, vec3 p0, vec3 p1, vec3 p2,
                                   out vec3 n, out float t, out float beta,
                                   out float gamma) {

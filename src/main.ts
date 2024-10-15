@@ -1,38 +1,35 @@
 import '../webrtx/src/patch';
-import { Mat4, Vec2, Vec3, mat4, mat3, vec3 } from 'wgpu-matrix';
+import { Mat4, Vec2, Vec3, mat4, mat3, vec3, vec4 } from 'wgpu-matrix';
 import { ArcballCamera, WASDCamera } from './camera';
 import { createInputHandler } from './input'; 
 import { ToneMapper } from './toneMapper';
 import { loadGaussianSplatting, PackedGaussians } from './GS_ply';
 import { code_raygen_shader, code_anyhit_shader, code_closesthit_shader, } from './GS_shader';
 
-var degree = 3.14159265358979323846 / 180.0;
-function hFov2focalLength(hFov: number, sensorW: number) {
-  return (sensorW/2) / Math.tan(hFov*degree/2);
-}
+
+// 1. https://superhedralcom.wordpress.com/2020/05/17/building-the-unit-icosahedron/
+// 2. https://polyhedr.com/icosahedron.html
+const rr = (3 + Math.sqrt(5.0)) / (2 * Math.sqrt(3.0)); 
+const ss = 1/rr;
+const tt = (1.0 + Math.sqrt(5.0)) / (2.0*rr);
+const vertices = new Float32Array([
+  -ss,  tt,  0,    ss,  tt,  0,   -ss, -tt,  0,    ss, -tt,  0,
+    0, -ss,  tt,    0,  ss,  tt,   0, -ss, -tt,    0,  ss, -tt,
+    tt,  0, -ss,    tt,  0,  ss,  -tt,  0, -ss,   -tt,  0,  ss
+]);
+const indices = new Uint32Array([
+  0, 11, 5,  0, 5, 1,  0, 1, 7,  0, 7, 10,  0, 10, 11,
+  1, 5, 9,  5, 11, 4,  11, 10, 2,  10, 7, 6,  7, 1, 8,
+  3, 9, 4,  3, 4, 2,  3, 2, 6,  3, 6, 8,  3, 8, 9,
+  4, 9, 5,  2, 4, 11,  6, 2, 10,  8, 6, 7,  9, 8, 1
+]);
+
 
 async function gaussianSceneToBvh(
   device: GPUDevice, 
   gsData: PackedGaussians,
   alpha_min: number
 ) {
-  // 1. https://superhedralcom.wordpress.com/2020/05/17/building-the-unit-icosahedron/
-  // 2. https://polyhedr.com/icosahedron.html
-  const r = (3 + Math.sqrt(5.0)) / (2 * Math.sqrt(3.0)); 
-  const s = 1/r;
-  const t = (1.0 + Math.sqrt(5.0)) / (2.0*r);
-  const vertices = new Float32Array([
-    -s,  t,  0,    s,  t,  0,   -s, -t,  0,    s, -t,  0,
-     0, -s,  t,    0,  s,  t,   0, -s, -t,    0,  s, -t,
-     t,  0, -s,    t,  0,  s,  -t,  0, -s,   -t,  0,  s
-  ]);
-  const indices = new Uint32Array([
-    0, 11, 5,  0, 5, 1,  0, 1, 7,  0, 7, 10,  0, 10, 11,
-    1, 5, 9,  5, 11, 4,  11, 10, 2,  10, 7, 6,  7, 1, 8,
-    3, 9, 4,  3, 4, 2,  3, 2, 6,  3, 6, 8,  3, 8, 9,
-    4, 9, 5,  2, 4, 11,  6, 2, 10,  8, 6, 7,  9, 8, 1
-  ]);
-
   const vBuffer = device.createBuffer({
     label: "isosahedron.vertex.buffer",
     size: vertices.byteLength,
@@ -104,6 +101,176 @@ async function gaussianSceneToBvh(
   device.hostBuildRayTracingAccelerationContainer(tlas);
   return tlas;
 }
+
+async function gaussianSceneToBvh2(
+  device: GPUDevice, 
+  gsData: PackedGaussians,
+  alpha_min: number
+) {
+  const vertexPool = new Float32Array(vertices.length * gsData.numGaussians);
+
+  let vOffset = 0;
+  for(let i = 0; i < gsData.numGaussians; i++) {
+    const [x, y, z] = gsData.gaussianData[i]['position'];
+    const opacity = gsData.gaussianData[i]['opacity'];
+    const [rr, rx, ry, rz] = gsData.gaussianData[i]['rotQuat'];
+    const [sx, sy, sz] = gsData.gaussianData[i]['scale'];
+
+    const s = opacity > alpha_min ? Math.sqrt(2*Math.log(opacity / alpha_min)) : 0.0;
+    const scale = mat4.scaling([s*sx, s*sy, s*sz]);
+    const rotation = mat4.fromMat3(mat3.fromQuat([rx, ry, rz, rr]));   // This is the transpose of the R matrix in the shader.
+    const transform = mat4.mul(mat4.translation([x, y, z]), mat4.mul(rotation, scale));
+
+    for(let j = 0; j < vertices.length; j += 3) {
+      const newVertex = vec4.transformMat4([vertices[j], vertices[j+1], vertices[j+2], 1], transform);
+      vertexPool[vOffset + j+0] = newVertex[0];
+      vertexPool[vOffset + j+1] = newVertex[1];
+      vertexPool[vOffset + j+2] = newVertex[2];
+    }
+    vOffset += vertices.length;     // 12x3
+  }
+
+  const vBuffer = device.createBuffer({
+    label: "isosahedron.vertex.buffer",
+    size: vertexPool.byteLength,
+    usage: GPUBufferUsageRTX.ACCELERATION_STRUCTURE_BUILD_INPUT_READONLY,
+    mappedAtCreation: true,
+  });
+  new Float32Array(vBuffer.getMappedRange()).set(vertexPool);
+  vBuffer.unmap();
+  
+  const iBuffer = device.createBuffer({
+    label: "isosahedron.index.buffer",
+    size: indices.byteLength,
+    usage: GPUBufferUsageRTX.ACCELERATION_STRUCTURE_BUILD_INPUT_READONLY,
+    mappedAtCreation: true,
+  });
+  new Uint32Array(iBuffer.getMappedRange()).set(indices);
+  iBuffer.unmap();
+
+  const vOffsets = Array.from({ length: gsData.numGaussians }, (_, i) => (i * vertices.length));
+
+  const blasDesc: GPURayTracingAccelerationContainerDescriptor_bottom = {
+    usage: GPURayTracingAccelerationContainerUsage.NONE,
+    level: 'bottom',
+    geometries: vOffsets.map(vOff => ({
+      usage: GPURayTracingAccelerationGeometryUsage.NONE,
+      type: 'triangles',
+      vertex: {
+        buffer: vBuffer,
+        format: 'float32x3',
+        stride: 4 * 3,    // Maybe, only 4 x 3 is supported!!
+        offset: vOff * Float32Array.BYTES_PER_ELEMENT,
+        size: vertices.length * Float32Array.BYTES_PER_ELEMENT,
+      },
+      index: {
+        buffer: iBuffer,
+        format: 'uint32',
+      },
+    })),
+  };
+
+  const tlasDesc: GPURayTracingAccelerationContainerDescriptor_top = {
+    level: 'top',
+    usage: GPURayTracingAccelerationContainerUsage.NONE,
+    instances: [{
+      usage: GPURayTracingAccelerationInstanceUsage.NONE,
+      mask: 0xFF,
+      instanceSBTRecordOffset: 0, 
+      blas: blasDesc,
+    }],
+  };
+
+  const tlas = device.createRayTracingAccelerationContainer(tlasDesc);
+  device.hostBuildRayTracingAccelerationContainer(tlas);
+  return tlas;
+}
+
+async function gaussianSceneToBvh3(
+  device: GPUDevice, 
+  gsData: PackedGaussians,
+  alpha_min: number
+) {
+  const vertexPool = new Float32Array(vertices.length * gsData.numGaussians);
+  const indexPool = new Uint32Array(indices.length * gsData.numGaussians);
+
+  let vOffset = 0;
+  let iOffset = 0;
+  for(let i = 0; i < gsData.numGaussians; i++) {
+    const [x, y, z] = gsData.gaussianData[i]['position'];
+    const opacity = gsData.gaussianData[i]['opacity'];
+    const [rr, rx, ry, rz] = gsData.gaussianData[i]['rotQuat'];
+    const [sx, sy, sz] = gsData.gaussianData[i]['scale'];
+
+    const s = opacity > alpha_min ? Math.sqrt(2*Math.log(opacity / alpha_min)) : 0.0;
+    const scale = mat4.scaling([s*sx, s*sy, s*sz]);
+    const rotation = mat4.fromMat3(mat3.fromQuat([rx, ry, rz, rr]));   // This is the transpose of the R matrix in the shader.
+    const transform = mat4.mul(mat4.translation([x, y, z]), mat4.mul(rotation, scale));
+
+    for(let j = 0; j < vertices.length; j += 3) {
+      const newVertex = vec4.transformMat4([vertices[j], vertices[j+1], vertices[j+2], 1], transform);
+      vertexPool[vOffset + j+0] = newVertex[0];
+      vertexPool[vOffset + j+1] = newVertex[1];
+      vertexPool[vOffset + j+2] = newVertex[2];
+    }
+  
+    indices.forEach((vIdx, iIdx) => { indexPool[iOffset + iIdx] = vOffset/3 + vIdx; });
+    vOffset += vertices.length;     // 12x3
+    iOffset += indices.length;      // 20x3
+  }
+
+  const vBuffer = device.createBuffer({
+    label: "isosahedron.vertex.buffer",
+    size: vertexPool.byteLength,
+    usage: GPUBufferUsageRTX.ACCELERATION_STRUCTURE_BUILD_INPUT_READONLY,
+    mappedAtCreation: true,
+  });
+  new Float32Array(vBuffer.getMappedRange()).set(vertexPool);
+  vBuffer.unmap();
+  
+  const iBuffer = device.createBuffer({
+    label: "isosahedron.index.buffer",
+    size: indexPool.byteLength,
+    usage: GPUBufferUsageRTX.ACCELERATION_STRUCTURE_BUILD_INPUT_READONLY,
+    mappedAtCreation: true,
+  });
+  new Uint32Array(iBuffer.getMappedRange()).set(indexPool);
+  iBuffer.unmap();
+
+  const blasDesc: GPURayTracingAccelerationContainerDescriptor_bottom = {
+    usage: GPURayTracingAccelerationContainerUsage.NONE,
+    level: 'bottom',
+    geometries: [{
+      usage: GPURayTracingAccelerationGeometryUsage.NONE,
+      type: 'triangles',
+      vertex: {
+        buffer: vBuffer,
+        format: 'float32x3',
+        stride: 4 * 3,    // Maybe, only 4 x 3 is supported!!
+      },
+      index: {
+        buffer: iBuffer,
+        format: 'uint32',
+      },
+    }],
+  };
+
+  const tlasDesc: GPURayTracingAccelerationContainerDescriptor_top = {
+    level: 'top',
+    usage: GPURayTracingAccelerationContainerUsage.NONE,
+    instances: [{
+      usage: GPURayTracingAccelerationInstanceUsage.NONE,
+      mask: 0xFF,
+      instanceSBTRecordOffset: 0, 
+      blas: blasDesc,
+    }],
+  };
+
+  const tlas = device.createRayTracingAccelerationContainer(tlasDesc);
+  device.hostBuildRayTracingAccelerationContainer(tlas);
+  return tlas;
+}
+
 
 async function createRayTracingPipeline(
   device: GPUDevice, 
@@ -214,13 +381,13 @@ async function main(canvas: HTMLCanvasElement)
     device = await adapter.requestDevice({
       requiredFeatures: ["ray_tracing" as GPUFeatureName],
       requiredLimits: {
-        maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize / 2,
-        maxBufferSize : adapter.limits.maxStorageBufferBindingSize / 2,
+        maxStorageBufferBindingSize: adapter.limits.maxStorageBufferBindingSize,
+        maxBufferSize : adapter.limits.maxBufferSize,
         // maxStorageBuffersPerShaderStage : adapter.limits.maxStorageBuffersPerShaderStage,
       },
     });
-    console.log(`maxStorageBufferBindingSize: ${adapter.limits.maxStorageBufferBindingSize / 2}`);
-    console.log(`maxBufferSize: ${adapter.limits.maxBufferSize / 2}`);
+    console.log(`maxStorageBufferBindingSize: ${adapter.limits.maxStorageBufferBindingSize}`);
+    console.log(`maxBufferSize: ${adapter.limits.maxBufferSize}`);
   } catch (e) {
     console.error(e);
     device = await adapter.requestDevice({
@@ -246,7 +413,7 @@ async function main(canvas: HTMLCanvasElement)
   console.log(`Ply file read time: ${(Date.now()-t0)/1000}`);
 
   const alpha_min = 0.01;
-  const hit_array_size = 16;
+  const hit_array_size = 8;
 
   t0 = Date.now();
   const tlas = await gaussianSceneToBvh(device, gsData, alpha_min);
@@ -400,26 +567,12 @@ async function main(canvas: HTMLCanvasElement)
 };
 
 
-// function HTMLGui(uniforms: any) {
-//   document.getElementById('hFov')!.addEventListener('input', (e) => {
-//     uniforms.hFov = +(e.target as HTMLInputElement).value;
-//     uniforms.accumulatedFrames = 0;
-//     document.getElementById('fl')!.innerText = hFov2focalLength(uniforms.hFov, 36).toFixed(2);
-//   });
-
-//   document.getElementById('saveBtn')!.addEventListener('click', () => {
-//     const link = document.createElement('a');
-//     link.href = (document.getElementById('canvas') as HTMLCanvasElement).toDataURL('image/png');
-//     link.download = 'vivid_renderer_image.png';  // 저장할 파일명
-//     link.click();
-//   });
-
-//   return () => {
-//     (document.getElementById('hFov') as HTMLInputElement).value = uniforms.hFov.toString();
-//     document.getElementById('fl')!.innerText = hFov2focalLength(uniforms.hFov, 36).toFixed(2);
-//   };
-// }
-
+document.getElementById('saveBtn')!.addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.href = (document.getElementById('canvas') as HTMLCanvasElement).toDataURL('image/png');
+  link.download = 'render.png';  // 저장할 파일명
+  link.click();
+});
 
 document.addEventListener('DOMContentLoaded', async () => {
   try {

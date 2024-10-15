@@ -145,19 +145,22 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
             getTriangleVertexPositions(g, node.entry_index_or_primitive_id);
         vec3 n;
         // TODO: use object ray instead?
-        hit = intersect_triangle_branchless(
+        hit = intersect_triangle_branchless0(                       // modified 2
             _crt_ObjectRayOriginEXT, _crt_RayTminEXT,
             _crt_ObjectRayDirectionEXT, _crt_RayTmaxEXT, positions[0],
             positions[1], positions[2], n, t, buf_hitAttributes[0],
             buf_hitAttributes[1]);
         if (hit) {
-          n = normalize((n * _crt_WorldToObjectEXT).xyz);
+          n = normalize((n * _crt_WorldToObjectEXT).xyz); 
           buf_hitAttributes[2] = n.x;
           buf_hitAttributes[3] = n.y;
           buf_hitAttributes[4] = n.z;
-          hitKind = dot(n, _crt_WorldRayDirectionEXT) > 0
-                        ? gl_HitKindFrontFacingTriangleEXT
+          hitKind = dot(n, _crt_WorldRayDirectionEXT) < 0             // modified 2
+                        ? gl_HitKindFrontFacingTriangleEXT   
                         : gl_HitKindBackFacingTriangleEXT;
+          if ((rayFlags & gl_RayFlagsCullBackFacingTrianglesEXT) != 0  // modified 2
+            && hitKind == gl_HitKindBackFacingTriangleEXT) 
+            hit = false;
         }
       } else {
         // skip duplicated AABB test if containing only one primitive
@@ -184,12 +187,19 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
           ((rayFlags & gl_RayFlagsOpaqueEXT) == 0)
           && RAHit(_CRT_SBT_BUFFER_NAME[sbtIndex / 4]) != WEBRTX_SHADER_UNUSED 
           // && !(g.owningGeometryFlags & GEOMETRY_OPAQUE_BIT)
-        ) 
-        {
+        ) {
           aniHit_ret = invokeShaderIndirect_anyHit(  
               sbtIndex, _crt_WorldRayOriginEXT, _crt_RayTminEXT,
               _crt_WorldRayDirectionEXT, t /* _crt_RayTmaxEXT */, node.geometryId,
               node.entry_index_or_primitive_id, buf_hitAttributes);
+          
+          if (aniHit_ret != 0 && aniHit_ret != 1 && aniHit_ret != 2) { // modified 2
+            float tt = uintBitsToFloat(aniHit_ret);
+            if (tt < _crt_RayTmaxEXT) {
+              _crt_RayTmaxEXT = tt;
+            }
+            aniHit_ret = _CRT_HIT_REPORT_IGNORE;
+          }
         }
 
         if (aniHit_ret != _CRT_HIT_REPORT_IGNORE) 

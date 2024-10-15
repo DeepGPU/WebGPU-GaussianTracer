@@ -20,7 +20,7 @@ fn main(@builtin(position) coord : vec4<f32>) -> @location(0) vec4<f32> {
   let hdrColor: vec3<f32> = pixelBuffer[pixelIndex].xyz;
   let ldrColor: vec3<f32> = 1.0 - exp(-exposure * hdrColor);
 
-  return vec4<f32>(pow(ldrColor, vec3<f32>(1/2.2)), 1.0);
+  return vec4<f32>(hdrColor, 1.0);
 }
 `;
 
