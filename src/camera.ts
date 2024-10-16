@@ -155,8 +155,8 @@ export class WASDCamera extends CameraBase implements Camera {
       (positive ? 1 : 0) - (negative ? 1 : 0);
 
     // Apply the delta rotation to the pitch and yaw angles
-    this.yaw -= input.analog.x * deltaTime * this.rotationSpeed;
-    this.pitch -= input.analog.y * deltaTime * this.rotationSpeed;
+    this.yaw += input.analog.x * deltaTime * this.rotationSpeed;
+    this.pitch += input.analog.y * deltaTime * this.rotationSpeed;
 
     // Wrap yaw between [0° .. 360°], just to prevent large accumulation.
     this.yaw = mod(this.yaw, Math.PI * 2);
@@ -172,8 +172,8 @@ export class WASDCamera extends CameraBase implements Camera {
 
     // Calculate the new target velocity
     const digital = input.digital;
-    const deltaRight = sign(digital.right, digital.left);
-    const deltaUp = sign(digital.up, digital.down);
+    const deltaRight = sign(digital.left, digital.right);
+    const deltaUp = sign(digital.down, digital.up);
     const targetVelocity = vec3.create();
     const deltaBack = sign(digital.backward, digital.forward);
     vec3.addScaled(targetVelocity, this.right, deltaRight, targetVelocity);

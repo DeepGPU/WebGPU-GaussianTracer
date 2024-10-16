@@ -51,7 +51,12 @@ const COMMON_CONSTANTS = `
     const float SH_C3_5 = 1.445305721320277f;
     const float SH_C3_6 = -0.5900435899266435f;
 
-    const uint debugMode = 2;
+    /*
+    0: no debug
+    1: visualize bvh scene consisting of the isocohedrons
+    2: visualize the call count of anyhit shader
+    */
+    const uint debugMode = 0;
     const bool antialiasing = false;
 #endif
 `;
@@ -65,7 +70,7 @@ const STRUCT_RAYPAYLOAD = `
     };
 
     struct RayPayload {
-        HitInfo k_closest[MAX_K];
+        HitInfo k_closest[MAX_K + 1];
         vec3 debugColor;
         uint hitCount;
         uint hitCount2;
@@ -104,6 +109,7 @@ layout(binding = 3) uniform rtUniforms {
     uint k;                 // 88~92
     uint sh_degree_max;     // 92~96
     uint accumulatedFrames; // 96~100
+    uint earlyStop;         // 100~104
 } g;
 
 
@@ -191,7 +197,7 @@ vec3 computeRadiance(in GaussianParticle gp, in vec3 d)
 vec4 tracePath(vec3 rayOrigin, vec3 rayDir) 
 {
     vec3 L = vec3(0.0);
-    float T = 1.0;
+    float T = 1;
     float t_curr = g.t_min;
     const float epsillon = 1e-4;
    
@@ -222,20 +228,24 @@ vec4 tracePath(vec3 rayOrigin, vec3 rayDir)
             return vec4(0,0.5,0, T);
         else if(payload.hitCount < 150)
             return vec4(0,0,0.5, T);
-        else
-            return vec4(0.5,0.5,0.5, T);
+        
+        return vec4(0.5,0.5,0.5, T);
     }
 
+    uint step = 0;
     while(g.T_min < T && t_curr < g.t_max) 
     {
+        if(g.earlyStop == step++)
+            break;
+
         for(int i=0; i<g.k; i++)
         {
             payload.k_closest[i].t = g.t_max;
             payload.k_closest[i].particleIndex = uint(-1);
         }
 
-        uint rayFlags = gl_RayFlagsCullBackFacingTrianglesEXT |
-                        gl_RayFlagsSkipClosestHitShaderEXT;
+        uint rayFlags = gl_RayFlagsCullBackFacingTrianglesEXT |     // ignore hit when the ray hits the back face of the triangle
+                        gl_RayFlagsSkipClosestHitShaderEXT;         // skip closest hit shader
         traceRayEXT(
             topLevelAS, rayFlags, 0xFF, 0, 1, 0, 
             rayOrigin, t_curr, rayDir, g.t_max, 0);  
@@ -245,7 +255,10 @@ vec4 tracePath(vec3 rayOrigin, vec3 rayDir)
         for(int i=0; i<g.k; i++) 
         {
             if (payload.k_closest[i].particleIndex == uint(-1)) 
+            {
+                t_curr = g.t_max;
                 break;
+            }
 
             GaussianParticle gp = particles[payload.k_closest[i].particleIndex];
             float alpha_hit = computeResponse(gp, rayOrigin, rayDir) * gp.opacity;  
@@ -282,7 +295,7 @@ void main()
     {
         // gl_RayFlagsOpaqueEXT means that anyhit shader does not called
         traceRayEXT(
-            topLevelAS, gl_RayFlagsOpaqueEXT, 0xFF, 0, 1, 0,    
+            topLevelAS, 0, 0xFF, 0, 1, 0,    
             cameraPos, g.t_min, rayDir, g.t_max, 0);  
         newRadiance = payload.debugColor;
     }
@@ -325,21 +338,32 @@ void main()
     payload.hitCount++;
 
     uint particleIndex = _CRT_SBT_BUFFER_NAME[_CRT_PARAM_SHADER_RECORD_WORD_OFFSET];  
+
+    // // case 1 : slower than case 2, why?
+    // payload.k_closest[g.k] = HitInfo(gl_HitTEXT, particleIndex);
+    // for(int i=int(g.k-1); i>=0; i--)
+    // {
+    //     if(payload.k_closest[i+1].t < payload.k_closest[i].t)
+    //         swap(payload.k_closest[i+1], payload.k_closest[i]);
+    //     else
+    //         break;
+    // }
+
+    // case 2
     HitInfo hitInfo = HitInfo(gl_HitTEXT, particleIndex);
-    
     for(int i=0; i<g.k; i++) 
     {
-        if(hitInfo.t < payload.k_closest[i].t)    // The paper seems to have a errata in the inequality sign.
+        if(hitInfo.t < payload.k_closest[i].t) 
             swap(hitInfo, payload.k_closest[i]);
     }
 
-    _crt_hit_report = floatBitsToUint(payload.k_closest[g.k-1].t);
-    return;
+    // _crt_hit_report = floatBitsToUint(payload.k_closest[g.k-1].t);  // This is the more efficient commit starategy, but there is no correspondings in modern raytracing APIs (ex. OptiX, DXR, Vulkan raytracing).
+    // return;
 
     if(gl_HitTEXT < payload.k_closest[g.k-1].t)  
     {
          // not commit
-        _crt_hit_report = _CRT_HIT_REPORT_IGNORE;    // ignoreIntersectionEXT(); in vulkan ray tracing extension
+        _crt_hit_report = _CRT_HIT_REPORT_IGNORE;    // corresponds to ignoreIntersectionEXT() of vulkan ray tracing extension
     }
     else     
     {

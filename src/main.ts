@@ -25,10 +25,13 @@ const indices = new Uint32Array([
 ]);
 
 
+// One blas with one isocahedron geometry, and many instances with different transforms. 
+// The mapping between the isocahedron and the shader binding table offsets is given by instanceSBTRecordOffset.
 async function gaussianSceneToBvh(
   device: GPUDevice, 
   gsData: PackedGaussians,
-  alpha_min: number
+  alpha_min: number,
+  GaussianIndices: number[]
 ) {
   const vBuffer = device.createBuffer({
     label: "isosahedron.vertex.buffer",
@@ -73,7 +76,12 @@ async function gaussianSceneToBvh(
     const [rr, rx, ry, rz] = gsData.gaussianData[i]['rotQuat'];
     const [sx, sy, sz] = gsData.gaussianData[i]['scale'];
 
-    const s = opacity > alpha_min ? Math.sqrt(2*Math.log(opacity / alpha_min)) : 0.0;
+    if (opacity > alpha_min)
+      GaussianIndices.push(i);
+    else 
+      continue;
+    
+    const s = Math.sqrt(2*Math.log(opacity / alpha_min));
     const scale = mat4.scaling([s*sx, s*sy, s*sz]);
     const rotation = mat4.fromMat3(mat3.fromQuat([rx, ry, rz, rr]));   // This is the transpose of the R matrix in the shader.
     const mat4x4 = mat4.mul(mat4.translation([x, y, z]), mat4.mul(rotation, scale));
@@ -102,10 +110,16 @@ async function gaussianSceneToBvh(
   return tlas;
 }
 
+// One blas with many transformed geometries, and one instance.
+// The mapping between the isocahedron and the shader binding table offsets is given by geometry index implicitly.
+// For more details, see https://docs.vulkan.org/spec/latest/chapters/raytracing.html#shader-binding-table-indexing-rules
+// Anyway, for very many particles scene, this webgpu framework do not work due to the so much long #define preprocessor directive.
+// For more details, check out the full compute shader code via console.log(completeGLSL) in compile.ts.
 async function gaussianSceneToBvh2(
   device: GPUDevice, 
   gsData: PackedGaussians,
-  alpha_min: number
+  alpha_min: number,
+  GaussianIndices: number[]
 ) {
   const vertexPool = new Float32Array(vertices.length * gsData.numGaussians);
 
@@ -116,7 +130,12 @@ async function gaussianSceneToBvh2(
     const [rr, rx, ry, rz] = gsData.gaussianData[i]['rotQuat'];
     const [sx, sy, sz] = gsData.gaussianData[i]['scale'];
 
-    const s = opacity > alpha_min ? Math.sqrt(2*Math.log(opacity / alpha_min)) : 0.0;
+    if (opacity > alpha_min)
+      GaussianIndices.push(i);
+    else 
+      continue;
+    
+    const s = Math.sqrt(2*Math.log(opacity / alpha_min));
     const scale = mat4.scaling([s*sx, s*sy, s*sz]);
     const rotation = mat4.fromMat3(mat3.fromQuat([rx, ry, rz, rr]));   // This is the transpose of the R matrix in the shader.
     const transform = mat4.mul(mat4.translation([x, y, z]), mat4.mul(rotation, scale));
@@ -186,10 +205,13 @@ async function gaussianSceneToBvh2(
   return tlas;
 }
 
+// One blas with an all-in-one geometry, and one instance. 
+// There cannot be mapping between the isocahedrons and the shader binding table offsets.
 async function gaussianSceneToBvh3(
   device: GPUDevice, 
   gsData: PackedGaussians,
-  alpha_min: number
+  alpha_min: number,
+  GaussianIndices: number[]
 ) {
   const vertexPool = new Float32Array(vertices.length * gsData.numGaussians);
   const indexPool = new Uint32Array(indices.length * gsData.numGaussians);
@@ -202,7 +224,12 @@ async function gaussianSceneToBvh3(
     const [rr, rx, ry, rz] = gsData.gaussianData[i]['rotQuat'];
     const [sx, sy, sz] = gsData.gaussianData[i]['scale'];
 
-    const s = opacity > alpha_min ? Math.sqrt(2*Math.log(opacity / alpha_min)) : 0.0;
+    if (opacity > alpha_min)
+      GaussianIndices.push(i);
+    else 
+      continue;
+    
+    const s = Math.sqrt(2*Math.log(opacity / alpha_min));
     const scale = mat4.scaling([s*sx, s*sy, s*sz]);
     const rotation = mat4.fromMat3(mat3.fromQuat([rx, ry, rz, rr]));   // This is the transpose of the R matrix in the shader.
     const transform = mat4.mul(mat4.translation([x, y, z]), mat4.mul(rotation, scale));
@@ -308,7 +335,7 @@ async function createRayTracingPipeline(
 function createShaderBindingTable(
   device: GPUDevice,
   pipeline: GPURayTracingPipeline,
-  numParticles: number
+  gaussianIndices: number[]
 ) {
   const sbt: GPUShaderBindingTable = {
     rayGen: {},
@@ -336,7 +363,7 @@ function createShaderBindingTable(
   
   sbt.rayHit.start = sbtOffset;
   sbt.rayHit.stride = stride;
-  sbt.rayHit.size = numParticles * stride;
+  sbt.rayHit.size = gaussianIndices.length * stride;
   sbtOffset += alignTo(sbt.rayHit.start + sbt.rayHit.size, device.ShaderGroupBaseAlignment);
   
   sbt.buffer = device.createBuffer({
@@ -354,10 +381,10 @@ function createShaderBindingTable(
       sbtView.setUint32(byteOffset, rgenH, LITTLE_ENDIAN);
     }
 
-    for(let i = 0; i < numParticles; i++) {
+    for(let i = 0; i < gaussianIndices.length; i++) {
       const byteOffset = sbt.rayHit.start + i * sbt.rayHit.stride;
       sbtView.setUint32(byteOffset + 0, hitGp, LITTLE_ENDIAN);
-      sbtView.setUint32(byteOffset + 4, i, LITTLE_ENDIAN);
+      sbtView.setUint32(byteOffset + 4, gaussianIndices[i], LITTLE_ENDIAN);  // This address offet must be matched with the instance or geometry's shader binding table indexing rule.
     }
   }
   sbt.buffer.unmap();
@@ -408,19 +435,37 @@ async function main(canvas: HTMLCanvasElement)
   const {width, height} = canvas;
 
   let t0 = Date.now();
-  // const gsData = await loadGaussianSplatting('../data/pc_short.ply');
-  const gsData = await loadGaussianSplatting('../data/train.ply');
+  const gsData = await loadGaussianSplatting('../data/pc_short.ply');
+  // const gsData = await loadGaussianSplatting('../data/train.ply');
   console.log(`Ply file read time: ${(Date.now()-t0)/1000}`);
 
-  const alpha_min = 0.01;
-  const hit_array_size = 8;
+  const inputHandler = createInputHandler(window, canvas);
+  const camera = new WASDCamera({
+    position: vec3.create(0, 0, 4), 
+    target: vec3.create(0, 0, 0)
+  });
+
+  const uniforms = {
+    toWorld: camera.matrix,
+    hFov: 60.0,
+    t_min: 1e-3,
+    t_max: 1e5,
+    T_min: 0.03,
+    sh_degree_max: 3,
+    accumulatedFrames: 0,
+    earlyStop: 0 
+  };
+  const alpha_min = 0.1;
+  const hit_array_size = 6;
+  const GaussianIndices: number[] = [];
+  
 
   t0 = Date.now();
-  const tlas = await gaussianSceneToBvh(device, gsData, alpha_min);
+  const tlas = await gaussianSceneToBvh(device, gsData, alpha_min, GaussianIndices);
   console.log(`Bvh build time: ${(Date.now()-t0)/1000}`);
 
   const rtPipeline = await createRayTracingPipeline(device, tlas, hit_array_size);
-  const sbt = createShaderBindingTable(device, rtPipeline, gsData.numGaussians);
+  const sbt = createShaderBindingTable(device, rtPipeline, GaussianIndices);
 
   const pixelBuffer = device.createBuffer({
     label: "raytracer.out.buffer",
@@ -463,22 +508,6 @@ async function main(canvas: HTMLCanvasElement)
 
   const toneMapper = new ToneMapper(device, pixelBuffer, width, height, canvasFormat);
 
-  const camera = new WASDCamera({
-    position: vec3.create(0, 0, 5), 
-    target: vec3.create(0, 0, 0)
-  });
-  const inputHandler = createInputHandler(window, canvas);
-
-  const uniforms = {
-    toWorld: camera.matrix,
-    hFov: 60.0,
-    t_min: 1e-3,
-    t_max: 1e5,
-    T_min: 0.03,
-    sh_degree_max: 3,
-    accumulatedFrames: 0,
-  };
-  
   const uniformData = new ArrayBuffer(uniformBufferSize);
   const fview = new Float32Array(uniformData);
   const uview = new Uint32Array(uniformData);
@@ -494,6 +523,7 @@ async function main(canvas: HTMLCanvasElement)
     uview[22] = hit_array_size;
     uview[23] = uniforms.sh_degree_max;
     uview[24] = uniforms.accumulatedFrames;
+    uview[25] = uniforms.earlyStop <= 0 ? -1 : uniforms.earlyStop;
     device.queue.writeBuffer(uniformBuffer, 0, uniformData);
   };
   upadateUniformData();

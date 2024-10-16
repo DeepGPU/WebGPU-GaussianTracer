@@ -151,10 +151,11 @@ void traceRayEXT(AccelerationStructureEXT topLevel, uint rayFlags,
             positions[1], positions[2], n, t, buf_hitAttributes[0],
             buf_hitAttributes[1]);
         if (hit) {
-          n = normalize((n * _crt_WorldToObjectEXT).xyz); 
-          buf_hitAttributes[2] = n.x;
-          buf_hitAttributes[3] = n.y;
-          buf_hitAttributes[4] = n.z;
+          n = ((n * _crt_WorldToObjectEXT).xyz); 
+          // n = normalize((n * _crt_WorldToObjectEXT).xyz); 
+          // buf_hitAttributes[2] = n.x;
+          // buf_hitAttributes[3] = n.y;
+          // buf_hitAttributes[4] = n.z;
           hitKind = dot(n, _crt_WorldRayDirectionEXT) < 0             // modified 2
                         ? gl_HitKindFrontFacingTriangleEXT   
                         : gl_HitKindBackFacingTriangleEXT;
