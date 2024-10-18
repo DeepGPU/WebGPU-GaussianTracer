@@ -25,8 +25,8 @@ const indices = new Uint32Array([
 ]);
 
 
-// One blas with one isocahedron geometry, and many instances with different transforms. 
-// The mapping between the isocahedron and the shader binding table offsets is given by instanceSBTRecordOffset.
+// One blas with one icosahedron geometry, and many instances with different transforms. 
+// The mapping between the icosahedron and the shader binding table offsets is given by instanceSBTRecordOffset.
 async function gaussianSceneToBvh(
   device: GPUDevice, 
   gsData: PackedGaussians,
@@ -111,7 +111,7 @@ async function gaussianSceneToBvh(
 }
 
 // One blas with many transformed geometries, and one instance.
-// The mapping between the isocahedron and the shader binding table offsets is given by geometry index implicitly.
+// The mapping between the icosahedron and the shader binding table offsets is given by geometry index implicitly.
 // For more details, see https://docs.vulkan.org/spec/latest/chapters/raytracing.html#shader-binding-table-indexing-rules
 // Anyway, for very many particles scene, this webgpu framework do not work due to the so much long #define preprocessor directive.
 // For more details, check out the full compute shader code via console.log(completeGLSL) in compile.ts.
@@ -206,7 +206,7 @@ async function gaussianSceneToBvh2(
 }
 
 // One blas with an all-in-one geometry, and one instance. 
-// There cannot be mapping between the isocahedrons and the shader binding table offsets.
+// There cannot be mapping between the icosahedrons and the shader binding table offsets.
 async function gaussianSceneToBvh3(
   device: GPUDevice, 
   gsData: PackedGaussians,
@@ -435,13 +435,13 @@ async function main(canvas: HTMLCanvasElement)
   const {width, height} = canvas;
 
   let t0 = Date.now();
-  const gsData = await loadGaussianSplatting('../data/pc_short.ply');
-  // const gsData = await loadGaussianSplatting('../data/train.ply');
+  // const gsData = await loadGaussianSplatting('../data/pc_short.ply');
+  const gsData = await loadGaussianSplatting('../data/train.ply');
   console.log(`Ply file read time: ${(Date.now()-t0)/1000}`);
 
   const inputHandler = createInputHandler(window, canvas);
   const camera = new WASDCamera({
-    position: vec3.create(0, 0, 4), 
+    position: vec3.create(0, 0, 3), 
     target: vec3.create(0, 0, 0)
   });
 
@@ -453,9 +453,14 @@ async function main(canvas: HTMLCanvasElement)
     T_min: 0.03,
     sh_degree_max: 3,
     accumulatedFrames: 0,
-    earlyStop: 0 
+    earlyStop: 0 ,
+    debugMode: 1, /*
+      0: no debug
+      1: visualize bvh scene consisting of the icosahedrons
+      2: visualize the call count of anyhit shader
+    */
   };
-  const alpha_min = 0.1;
+  const alpha_min = 0.2;
   const hit_array_size = 6;
   const GaussianIndices: number[] = [];
   
@@ -524,6 +529,7 @@ async function main(canvas: HTMLCanvasElement)
     uview[23] = uniforms.sh_degree_max;
     uview[24] = uniforms.accumulatedFrames;
     uview[25] = uniforms.earlyStop <= 0 ? -1 : uniforms.earlyStop;
+    uview[26] = uniforms.debugMode;
     device.queue.writeBuffer(uniformBuffer, 0, uniformData);
   };
   upadateUniformData();

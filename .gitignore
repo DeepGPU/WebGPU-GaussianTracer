@@ -13,7 +13,8 @@
 !data/
 !data/pc_short.ply
 
-
+!images/
+!images/**
 
 !dist/
 !dist/index.html

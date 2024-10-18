@@ -51,12 +51,6 @@ const COMMON_CONSTANTS = `
     const float SH_C3_5 = 1.445305721320277f;
     const float SH_C3_6 = -0.5900435899266435f;
 
-    /*
-    0: no debug
-    1: visualize bvh scene consisting of the isocohedrons
-    2: visualize the call count of anyhit shader
-    */
-    const uint debugMode = 0;
     const bool antialiasing = false;
 #endif
 `;
@@ -110,6 +104,7 @@ layout(binding = 3) uniform rtUniforms {
     uint sh_degree_max;     // 92~96
     uint accumulatedFrames; // 96~100
     uint earlyStop;         // 100~104
+    uint debugMode;         // 104~108
 } g;
 
 
@@ -203,7 +198,7 @@ vec4 tracePath(vec3 rayOrigin, vec3 rayDir)
    
     payload.hitCount = 0;
 
-    if (debugMode == 2)
+    if (g.debugMode == 2)
     {
         for(int i=0; i<g.k; i++)
             payload.k_closest[i].t = g.t_max;
@@ -291,7 +286,7 @@ void main()
     
     vec3 newRadiance;
 
-    if(debugMode == 1)
+    if(g.debugMode == 1)
     {
         // gl_RayFlagsOpaqueEXT means that anyhit shader does not called
         traceRayEXT(
